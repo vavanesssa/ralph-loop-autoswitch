@@ -41,7 +41,7 @@ declare -A CLI_COOLDOWN_UNTIL=()
 TIMEOUT_SEC=300
 MAX_RETRIES=3
 COOLDOWN_SEC=300
-INACTIVITY_SEC=60
+INACTIVITY_SEC=30
 LAST_OUTPUT_SIZE=0
 LAST_ACTIVITY_TIME=0
 
@@ -122,7 +122,7 @@ create_default_config() {
   "timeout_seconds": 300,
   "max_retries_per_cli": 3,
   "cooldown_seconds": 300,
-  "inactivity_seconds": 60,
+  "inactivity_seconds": 30,
   "completion_markers": ["<promise>COMPLETE</promise>", "<promise>DONE</promise>"],
   "approval_patterns": ["plan te convient", "this plan ok", "approve this plan", "valider ce plan"],
   "cli_configs": {
@@ -221,38 +221,65 @@ detect_approval_request() {
 # Execution
 #-----------------------------------------------------------------------------
 
-# Affiche GENERATING en rouge avec animation
+# Affiche GENERATING en rouge avec animation et temps écoulé/timeout
 show_generating() {
     local pid="$1"
     local tmp_file="$2"
+    local start_time=$(date +%s)
     local last_size=0
     local inactive_count=0
     local spinner=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local i=0
     
+    # Formatage du timeout
+    local timeout_display
+    if [[ $TIMEOUT_SEC -ge 60 ]]; then
+        local mins=$((TIMEOUT_SEC / 60))
+        local secs=$((TIMEOUT_SEC % 60))
+        if [[ $secs -eq 0 ]]; then
+            timeout_display="${mins}min"
+        else
+            timeout_display="${mins}m${secs}s"
+        fi
+    else
+        timeout_display="${TIMEOUT_SEC}s"
+    fi
+    
     while kill -0 "$pid" 2>/dev/null; do
+        local now=$(date +%s)
+        local elapsed=$((now - start_time))
         local current_size=$(stat -f%z "$tmp_file" 2>/dev/null || echo "0")
+        
+        # Formatage temps écoulé
+        local elapsed_display
+        if [[ $elapsed -ge 60 ]]; then
+            local e_mins=$((elapsed / 60))
+            local e_secs=$((elapsed % 60))
+            elapsed_display="${e_mins}m${e_secs}s"
+        else
+            elapsed_display="${elapsed}s"
+        fi
         
         if [[ "$current_size" -gt "$last_size" ]]; then
             # Nouvelle sortie détectée
             last_size=$current_size
             inactive_count=0
-            printf "\r${RED}${BOLD}🔴 GENERATING ${spinner[$i]}${NC}  "
+            printf "\r${RED}${BOLD}🔴 GENERATING ${spinner[$i]}${NC} [${elapsed_display}/${timeout_display}]    "
         else
             ((inactive_count++)) || true
             local inactive_secs=$((inactive_count))
             
             if [[ $inactive_secs -ge $INACTIVITY_SEC ]]; then
-                printf "\r${YELLOW}${BOLD}⚠️  INACTIF depuis ${inactive_secs}s${NC}  "
+                printf "\r${YELLOW}${BOLD}⚠️  INACTIF ${inactive_secs}s${NC} [${elapsed_display}/${timeout_display}]    "
             else
-                printf "\r${RED}${BOLD}🔴 GENERATING ${spinner[$i]}${NC} (${inactive_secs}s)  "
+                printf "\r${RED}${BOLD}🔴 GENERATING ${spinner[$i]}${NC} [${elapsed_display}/${timeout_display}] (idle: ${inactive_secs}s/${INACTIVITY_SEC}s)    "
             fi
         fi
         
         i=$(( (i + 1) % ${#spinner[@]} ))
         sleep 1
     done
-    printf "\r                                        \r"
+    printf "\r                                                              \r"
 }
 
 # Détection d'inactivité - retourne 0 si inactif trop longtemps
