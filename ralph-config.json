@@ -1,5 +1,5 @@
 {
-  "cli_priority": ["claude", "gemini", "codex", "copilot", "opencode"],
+  "cli_priority": ["opencode", "claude", "codex", "gemini", "copilot"],
   "timeout_seconds": 300,
   "max_retries_per_cli": 3,
   "cooldown_seconds": 300,

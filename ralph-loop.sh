@@ -101,7 +101,7 @@ load_config() {
 create_default_config() {
     cat > "$CONFIG_FILE" << 'EOF'
 {
-  "cli_priority": ["claude", "gemini", "codex", "copilot", "opencode"],
+  "cli_priority": ["opencode", "claude", "codex", "gemini", "copilot"],
   "timeout_seconds": 300,
   "max_retries_per_cli": 3,
   "cooldown_seconds": 300,
@@ -152,9 +152,20 @@ check_cli_health() {
     local now=$(date +%s)
     local cooldown="${CLI_COOLDOWN_UNTIL[$cli]:-0}"
 
-    [[ $now -lt $cooldown ]] && return 1
-    command -v "$cmd" &>/dev/null || return 1
-    timeout 5s "$cmd" --version &>/dev/null 2>&1 || timeout 5s "$cmd" --help &>/dev/null 2>&1 || return 1
+    # En cooldown ?
+    if [[ $now -lt $cooldown ]]; then
+        local remaining=$((cooldown - now))
+        log "DEBUG" "⏸️  $cli en cooldown (${remaining}s restantes)"
+        return 1
+    fi
+
+    # Commande existe ?
+    if ! command -v "$cmd" &>/dev/null; then
+        log "DEBUG" "❌ $cli non trouvé dans PATH"
+        return 1
+    fi
+
+    log "DEBUG" "✓ $cli disponible"
     return 0
 }
 
@@ -195,74 +206,122 @@ execute_with_cli() {
     local cli="$1" prompt="$2"
     local full_cmd="${CLI_COMMANDS[$cli]}"
 
-    [[ "$cli" != "$LAST_CLI" ]] && [[ -n "$LAST_CLI" ]] && log "SWITCH" "━━━ $LAST_CLI → $cli ━━━"
+    if [[ "$cli" != "$LAST_CLI" ]] && [[ -n "$LAST_CLI" ]]; then
+        echo ""
+        log "SWITCH" "🔄 SWITCH: $LAST_CLI → $cli"
+        echo ""
+    fi
     CURRENT_CLI="$cli"
 
-    log "INFO" "🚀 Lancement: $cli"
-    echo -e "${CYAN}─────────────────────────────────────────────${NC}"
+    log "INFO" "🚀 Exécution: $full_cmd"
+    echo -e "${CYAN}┌─────────────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}│ 🤖 $cli en cours...                                            ${NC}"
+    echo -e "${CYAN}└─────────────────────────────────────────────────────────────────┘${NC}"
+    echo ""
 
     local tmp=$(mktemp)
     local exit_code=0
 
-    # Exécute et affiche en temps réel avec tee
-    timeout "${TIMEOUT_SEC}s" bash -c "echo \"\$1\" | $full_cmd" -- "$prompt" 2>&1 | tee "$tmp" || exit_code=${PIPESTATUS[0]}
-
-    echo -e "${CYAN}─────────────────────────────────────────────${NC}"
+    # Exécute et affiche en temps réel directement (pas de capture)
+    timeout "${TIMEOUT_SEC}s" bash -c "echo \"\$1\" | $full_cmd" -- "$prompt" 2>&1 | tee "$tmp"
+    exit_code=${PIPESTATUS[0]}
 
     local output=$(cat "$tmp")
     rm -f "$tmp"
 
-    [[ $exit_code -eq 124 ]] && { log "WARN" "$cli timeout"; return 2; }
+    echo ""
+    echo -e "${CYAN}└───────────────────── FIN $cli ─────────────────────┘${NC}"
 
+    # Timeout ?
+    if [[ $exit_code -eq 124 ]]; then
+        log "WARN" "⏱️  $cli TIMEOUT après ${TIMEOUT_SEC}s"
+        return 2
+    fi
+
+    # Rate limit ?
     if detect_rate_limit "$cli" "$output"; then
-        log "WARN" "⚠️  $cli RATE LIMIT"
+        echo ""
+        log "WARN" "🚫 $cli RATE LIMIT DÉTECTÉ - Cooldown ${COOLDOWN_SEC}s"
         CLI_COOLDOWN_UNTIL[$cli]=$(($(date +%s) + COOLDOWN_SEC))
         return 3
     fi
 
+    # Succès
     if [[ $exit_code -eq 0 ]]; then
+        log "INFO" "✅ $cli terminé avec succès"
         LAST_CLI="$cli"
-        echo "$output"
+        # On sauvegarde l'output pour la détection de complétion
+        echo "$output" > /tmp/ralph_last_output.txt
         return 0
     fi
 
+    # Erreur
+    log "WARN" "❌ $cli erreur (code: $exit_code)"
     return 1
 }
 
 execute_with_failover() {
     local prompt="$1"
 
+    log "DEBUG" "🔍 Recherche d'un CLI disponible..."
+
     for cli in "${CLI_ORDER[@]}"; do
-        check_cli_health "$cli" || continue
+        if ! check_cli_health "$cli"; then
+            continue
+        fi
 
         local attempt=0
         while [[ $attempt -lt $MAX_RETRIES ]]; do
-            ((attempt++))
-            local output exit_code=0
-            output=$(execute_with_cli "$cli" "$prompt") || exit_code=$?
+            ((attempt++)) || true
+            log "INFO" "📡 Tentative $attempt/$MAX_RETRIES avec $cli"
+            
+            local exit_code=0
+            execute_with_cli "$cli" "$prompt" || exit_code=$?
 
             case $exit_code in
-                0) echo "$output"; return 0 ;;
-                3) break ;;  # rate limit, next CLI
-                *) sleep $((2 ** (attempt - 1))) ;;
+                0) 
+                    return 0 
+                    ;;
+                3) 
+                    log "WARN" "⏭️  Rate limit sur $cli, passage au CLI suivant..."
+                    break 
+                    ;;  
+                2)
+                    log "WARN" "⏭️  Timeout sur $cli, passage au CLI suivant..."
+                    break
+                    ;;
+                *) 
+                    log "WARN" "🔄 Retry $attempt/$MAX_RETRIES pour $cli (erreur $exit_code)"
+                    sleep $((2 ** (attempt - 1))) 
+                    ;;
             esac
         done
     done
 
-    # Tous épuisés - attendre
+    # Tous les CLI épuisés - calculer attente
+    log "WARN" "😴 Tous les CLI épuisés ou en cooldown"
+    
     local now=$(date +%s) min_wait=999999
     for cli in "${CLI_ORDER[@]}"; do
         local cd="${CLI_COOLDOWN_UNTIL[$cli]:-0}"
-        [[ $cd -gt $now ]] && [[ $((cd - now)) -lt $min_wait ]] && min_wait=$((cd - now))
+        if [[ $cd -gt $now ]] && [[ $((cd - now)) -lt $min_wait ]]; then
+            min_wait=$((cd - now))
+        fi
     done
 
     if [[ $min_wait -lt 999999 ]]; then
-        log "INFO" "Attente ${min_wait}s..."
-        sleep "$min_wait"
+        log "INFO" "⏳ Attente de ${min_wait}s avant retry..."
+        # Afficher un countdown
+        for ((i=min_wait; i>0; i--)); do
+            printf "\r⏳ Cooldown: %3ds restantes..." "$i"
+            sleep 1
+        done
+        printf "\r✅ Cooldown terminé!           \n"
         execute_with_failover "$prompt"
         return $?
     fi
 
+    log "ERROR" "💀 Aucun CLI disponible!"
     return 1
 }
 
@@ -360,13 +419,21 @@ ralph_loop() {
         local phase="BUILD"
         check_plan_approved || phase="PLAN"
 
-        log "INFO" "━━━ Itération $iteration [$phase] [$CURRENT_CLI] ━━━"
+        echo ""
+        echo -e "${BOLD}╭───────────────────────────────────────────────────────────────╮${NC}"
+        echo -e "${BOLD}│  📍 ITÉRATION $iteration / $MAX_ITERATIONS                                          │${NC}"
+        echo -e "${BOLD}│  📋 Phase: $phase                                                │${NC}"
+        echo -e "${BOLD}│  🤖 CLI actuel: ${CURRENT_CLI:-aucun}                                        │${NC}"
+        echo -e "${BOLD}╰───────────────────────────────────────────────────────────────╯${NC}"
+        echo ""
 
         local prompt=$(cat "$PROMPT_FILE")
-        local output
 
-        if output=$(execute_with_failover "$prompt"); then
-            echo "$output" > "last_output.log"
+        if execute_with_failover "$prompt"; then
+            # Lire l'output sauvegardé
+            local output=""
+            [[ -f /tmp/ralph_last_output.txt ]] && output=$(cat /tmp/ralph_last_output.txt)
+            cp /tmp/ralph_last_output.txt last_output.log 2>/dev/null || true
 
             # Check completion
             if detect_completion "$output"; then
