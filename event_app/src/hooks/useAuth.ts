@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { createClient } from '@/lib/supabase/server';
+import { useEffect, useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
 export function useAuth() {
@@ -9,11 +9,11 @@ export function useAuth() {
 
   useEffect(() => {
     const checkUser = async () => {
-      const supabase = await createClient();
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
 
-      if (currentUser) {
-        setUser(currentUser);
+      if (session) {
+        setUser(session.user);
       } else {
         router.push('/login');
       }
@@ -25,7 +25,7 @@ export function useAuth() {
   }, [router]);
 
   const logout = async () => {
-    const supabase = await createClient();
+    const supabase = createClient();
     await supabase.auth.signOut();
     router.push('/login');
   };

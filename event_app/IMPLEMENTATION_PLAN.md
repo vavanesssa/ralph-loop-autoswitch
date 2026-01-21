@@ -82,6 +82,33 @@
 - Tester RLS policies
 - Vérifier triggers
 
+### 9. [DONE] Créer migration tables profiles
+- SQL: créer table profiles avec colonnes id, username, avatar_url, status, created_at, updated_at
+- Index sur username
+- Activer RLS avec policy de lecture publique et modification propre
+
+### 10. [DONE] Créer migration tables friendships
+- SQL: créer table friendships avec id, user_id, friend_id, status, created_at
+- Contrainte unique sur (user_id, friend_id)
+- Index sur user_id et friend_id
+- Activer RLS: lecture si impliqué, modification de son côté
+
+### 11. [DONE] Créer migration tables conversations
+- SQL: créer table conversations avec id, type, name, avatar_url, created_by, created_at, updated_at
+- Index sur created_at
+- Activer RLS: lecture si membre, modification par créateur/admin
+
+### 12. [DONE] Créer migration tables conversation_members
+- SQL: créer table conversation_members avec id, conversation_id, user_id, role, joined_at
+- Contrainte unique sur (conversation_id, user_id)
+- Index sur conversation_id, user_id, role
+- Activer RLS: lecture si membre, modification par admin
+
+### 13. [DONE] Créer migration tables messages
+- SQL: créer table messages avec id, conversation_id, sender_id, content, created_at, updated_at
+- Index sur (conversation_id, created_at DESC)
+- Activer RLS: lecture si membre, insertion si sender_id membre
+
 ## Phase 3: Authentification (60 min)
 
 ### 16. [ ] Créer composants ShadCN auth
