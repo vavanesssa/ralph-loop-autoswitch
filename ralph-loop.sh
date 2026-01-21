@@ -403,11 +403,12 @@ execute_with_failover() {
                     log "WARN" "🔄 Inactivité détectée sur $cli, relance immédiate..."
                     # Ne pas incrémenter attempt, on relance directement
                     ((attempt--)) || true
-                    sleep 2
+                    countdown 2 "Relance"
                     ;;
                 *) 
+                    local wait_time=$((2 ** (attempt - 1)))
                     log "WARN" "🔄 Retry $attempt/$MAX_RETRIES pour $cli (erreur $exit_code)"
-                    sleep $((2 ** (attempt - 1))) 
+                    countdown "$wait_time" "Retry $cli"
                     ;;
             esac
         done
@@ -426,12 +427,7 @@ execute_with_failover() {
 
     if [[ $min_wait -lt 999999 ]]; then
         log "INFO" "⏳ Attente de ${min_wait}s avant retry..."
-        # Afficher un countdown
-        for ((i=min_wait; i>0; i--)); do
-            printf "\r⏳ Cooldown: %3ds restantes..." "$i"
-            sleep 1
-        done
-        printf "\r✅ Cooldown terminé!           \n"
+        countdown "$min_wait" "Cooldown"
         execute_with_failover "$prompt"
         return $?
     fi
@@ -569,7 +565,7 @@ ralph_loop() {
             fi
         fi
 
-        sleep 2
+        countdown 2 "Prochaine itération"
     done
 
     log "WARN" "Limite d'itérations atteinte"
