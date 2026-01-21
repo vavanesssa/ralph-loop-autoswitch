@@ -4,7 +4,7 @@
 -- Create profiles table
 create table public.profiles (
   id uuid references auth.users on delete cascade not null primary key,
-  username text unique,
+  username text unique not null,
   avatar_url text,
   status text default 'offline',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
@@ -37,3 +37,18 @@ create policy "Insert is restricted"
 create policy "Delete is restricted"
   on public.profiles for delete
   using (false);
+
+-- Function to update updated_at timestamp
+create or replace function update_updated_at_column()
+returns trigger as $$
+begin
+  new.updated_at = timezone('utc'::text, now());
+  return new;
+end;
+$$ language plpgsql;
+
+-- Trigger to automatically update updated_at
+create trigger update_profiles_updated_at
+  before update on public.profiles
+  for each row
+  execute function update_updated_at_column();

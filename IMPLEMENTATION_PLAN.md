@@ -45,7 +45,7 @@
 
 ## Phase 2: Base de données Supabase (45 min)
 
-### 9. [ ] Créer migration tables profiles
+### 9. [DONE] Créer migration tables profiles
 - SQL: créer table profiles avec colonnes id, username, avatar_url, status, created_at, updated_at
 - Index sur username
 - Activer RLS avec policy de lecture publique et modification propre

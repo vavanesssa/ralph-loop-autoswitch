@@ -1,46 +1,27 @@
-import { useEffect, useState } from 'react'
-import { useTheme as useNextTheme } from 'next-themes'
-import { Moon, Sun } from 'lucide-react'
+import { useEffect } from 'react';
+import { useTheme as useNextTheme } from 'next-themes';
+import { useToast } from '@/components/ui/toast';
 
 export function useTheme() {
-  const { theme, setTheme, systemTheme } = useNextTheme()
-  const [mounted, setMounted] = useState(false)
+  const { theme, setTheme, resolvedTheme } = useNextTheme();
+  const { toast } = useToast();
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
+    const savedTheme = localStorage.getItem('theme');
+    if (!savedTheme) {
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      setTheme(systemTheme);
+    }
+  }, [setTheme]);
 
   const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark')
-  }
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    toast({
+      title: `Mode ${newTheme === 'dark' ? 'sombre' : 'clair'} activé`,
+    });
+  };
 
-  return {
-    theme: mounted ? (theme === 'system' ? systemTheme : theme) : 'light',
-    mounted,
-    toggleTheme,
-  }
-}
-
-export function ThemeToggle() {
-  const { theme, mounted, toggleTheme } = useTheme()
-
-  if (!mounted) {
-    return (
-      <div className="h-6 w-6 animate-pulse bg-gray-200 rounded-full" />
-    )
-  }
-
-  return (
-    <button
-      onClick={toggleTheme}
-      className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-      aria-label="Toggle theme"
-    >
-      {theme === 'dark' ? (
-        <Sun className="h-5 w-5 text-yellow-500" />
-      ) : (
-        <Moon className="h-5 w-5 text-gray-700" />
-      )}
-    </button>
-  )
+  return { theme, resolvedTheme, toggleTheme };
 }
