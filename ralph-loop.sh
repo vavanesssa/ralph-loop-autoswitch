@@ -41,6 +41,9 @@ declare -A CLI_COOLDOWN_UNTIL=()
 TIMEOUT_SEC=300
 MAX_RETRIES=3
 COOLDOWN_SEC=300
+INACTIVITY_SEC=60
+LAST_OUTPUT_SIZE=0
+LAST_ACTIVITY_TIME=0
 
 #-----------------------------------------------------------------------------
 # Couleurs
@@ -71,6 +74,19 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $*" >> "$LOG_FILE"
 }
 
+# Affiche un countdown avec message personnalisé
+countdown() {
+    local seconds="$1"
+    local message="${2:-Attente}"
+    local color="${3:-$YELLOW}"
+    
+    for ((i=seconds; i>0; i--)); do
+        printf "\r${color}${BOLD}⏳ ${message}: %3ds${NC}   " "$i"
+        sleep 1
+    done
+    printf "\r${GREEN}✅ ${message}: terminé!${NC}       \n"
+}
+
 #-----------------------------------------------------------------------------
 # Config
 #-----------------------------------------------------------------------------
@@ -96,6 +112,7 @@ load_config() {
     TIMEOUT_SEC=$(jq -r '.timeout_seconds // 300' "$CONFIG_FILE")
     MAX_RETRIES=$(jq -r '.max_retries_per_cli // 3' "$CONFIG_FILE")
     COOLDOWN_SEC=$(jq -r '.cooldown_seconds // 300' "$CONFIG_FILE")
+    INACTIVITY_SEC=$(jq -r '.inactivity_seconds // 60' "$CONFIG_FILE")
 }
 
 create_default_config() {
@@ -105,6 +122,7 @@ create_default_config() {
   "timeout_seconds": 300,
   "max_retries_per_cli": 3,
   "cooldown_seconds": 300,
+  "inactivity_seconds": 60,
   "completion_markers": ["<promise>COMPLETE</promise>", "<promise>DONE</promise>"],
   "approval_patterns": ["plan te convient", "this plan ok", "approve this plan", "valider ce plan"],
   "cli_configs": {
@@ -202,6 +220,57 @@ detect_approval_request() {
 #-----------------------------------------------------------------------------
 # Execution
 #-----------------------------------------------------------------------------
+
+# Affiche GENERATING en rouge avec animation
+show_generating() {
+    local pid="$1"
+    local tmp_file="$2"
+    local last_size=0
+    local inactive_count=0
+    local spinner=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+    local i=0
+    
+    while kill -0 "$pid" 2>/dev/null; do
+        local current_size=$(stat -f%z "$tmp_file" 2>/dev/null || echo "0")
+        
+        if [[ "$current_size" -gt "$last_size" ]]; then
+            # Nouvelle sortie détectée
+            last_size=$current_size
+            inactive_count=0
+            printf "\r${RED}${BOLD}🔴 GENERATING ${spinner[$i]}${NC}  "
+        else
+            ((inactive_count++)) || true
+            local inactive_secs=$((inactive_count))
+            
+            if [[ $inactive_secs -ge $INACTIVITY_SEC ]]; then
+                printf "\r${YELLOW}${BOLD}⚠️  INACTIF depuis ${inactive_secs}s${NC}  "
+            else
+                printf "\r${RED}${BOLD}🔴 GENERATING ${spinner[$i]}${NC} (${inactive_secs}s)  "
+            fi
+        fi
+        
+        i=$(( (i + 1) % ${#spinner[@]} ))
+        sleep 1
+    done
+    printf "\r                                        \r"
+}
+
+# Détection d'inactivité - retourne 0 si inactif trop longtemps
+check_inactivity() {
+    local tmp_file="$1"
+    local start_time="$2"
+    local last_size="$3"
+    
+    local current_size=$(stat -f%z "$tmp_file" 2>/dev/null || echo "0")
+    local now=$(date +%s)
+    local elapsed=$((now - start_time))
+    
+    if [[ "$current_size" -eq "$last_size" ]] && [[ $elapsed -ge $INACTIVITY_SEC ]]; then
+        return 0  # Inactif
+    fi
+    return 1
+}
+
 execute_with_cli() {
     local cli="$1" prompt="$2"
     local full_cmd="${CLI_COMMANDS[$cli]}"
@@ -221,11 +290,51 @@ execute_with_cli() {
 
     local tmp=$(mktemp)
     local exit_code=0
+    local start_time=$(date +%s)
 
-    # Exécute et affiche en temps réel directement (pas de capture)
-    timeout "${TIMEOUT_SEC}s" bash -c "echo \"\$1\" | $full_cmd" -- "$prompt" 2>&1 | tee "$tmp"
-    exit_code=${PIPESTATUS[0]}
-
+    # Lance la commande en background
+    timeout "${TIMEOUT_SEC}s" bash -c "echo \"\$1\" | $full_cmd" -- "$prompt" > "$tmp" 2>&1 &
+    local cmd_pid=$!
+    
+    # Lance le monitoring en background
+    show_generating "$cmd_pid" "$tmp" &
+    local monitor_pid=$!
+    
+    # Boucle de surveillance d'inactivité
+    local last_size=0
+    local inactivity_start=$(date +%s)
+    
+    while kill -0 "$cmd_pid" 2>/dev/null; do
+        local current_size=$(stat -f%z "$tmp" 2>/dev/null || echo "0")
+        local now=$(date +%s)
+        
+        if [[ "$current_size" -gt "$last_size" ]]; then
+            last_size=$current_size
+            inactivity_start=$now
+        else
+            local inactive_duration=$((now - inactivity_start))
+            if [[ $inactive_duration -ge $INACTIVITY_SEC ]]; then
+                log "WARN" "⚠️  Inactivité détectée (${inactive_duration}s) - Relance..."
+                kill "$cmd_pid" 2>/dev/null || true
+                kill "$monitor_pid" 2>/dev/null || true
+                wait "$cmd_pid" 2>/dev/null || true
+                rm -f "$tmp"
+                return 4  # Code spécial pour inactivité
+            fi
+        fi
+        sleep 1
+    done
+    
+    # Arrête le monitoring
+    kill "$monitor_pid" 2>/dev/null || true
+    wait "$cmd_pid" 2>/dev/null
+    exit_code=$?
+    
+    # Affiche l'output capturé
+    echo -e "${GREEN}${BOLD}✅ RÉPONSE REÇUE${NC}"
+    echo ""
+    cat "$tmp"
+    
     local output=$(cat "$tmp")
     rm -f "$tmp"
 
@@ -289,6 +398,12 @@ execute_with_failover() {
                 2)
                     log "WARN" "⏭️  Timeout sur $cli, passage au CLI suivant..."
                     break
+                    ;;
+                4)
+                    log "WARN" "🔄 Inactivité détectée sur $cli, relance immédiate..."
+                    # Ne pas incrémenter attempt, on relance directement
+                    ((attempt--)) || true
+                    sleep 2
                     ;;
                 *) 
                     log "WARN" "🔄 Retry $attempt/$MAX_RETRIES pour $cli (erreur $exit_code)"

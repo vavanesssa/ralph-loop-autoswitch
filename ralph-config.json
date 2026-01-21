@@ -3,6 +3,7 @@
   "timeout_seconds": 300,
   "max_retries_per_cli": 3,
   "cooldown_seconds": 300,
+  "inactivity_seconds": 60,
   "max_iterations": 50,
   "completion_markers": ["<promise>COMPLETE</promise>", "<promise>DONE</promise>"],
   "cli_configs": {
