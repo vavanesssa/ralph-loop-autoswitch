@@ -1,0 +1,57 @@
+{
+  "cli_priority": ["claude", "gemini", "codex", "copilot", "opencode"],
+  "timeout_seconds": 300,
+  "max_retries_per_cli": 3,
+  "cooldown_seconds": 300,
+  "max_iterations": 50,
+  "completion_markers": ["<promise>COMPLETE</promise>", "<promise>DONE</promise>"],
+  "cli_configs": {
+    "claude": {
+      "command": "claude",
+      "flags": "--dangerously-skip-permissions -p --output-format json",
+      "rate_limit_patterns": ["rate limit", "rate_limited", "429", "exhausted"],
+      "refusal_patterns": ["Usage Policy", "refusal"],
+      "health_check": "--version",
+      "context_file": ".claude/CLAUDE.md"
+    },
+    "gemini": {
+      "command": "gemini",
+      "flags": "--yolo -p --output-format json",
+      "rate_limit_patterns": ["RESOURCE_EXHAUSTED", "rateLimitExceeded", "429"],
+      "refusal_patterns": ["BLOCKED", "SAFETY"],
+      "health_check": "--help",
+      "context_file": "GEMINI.md"
+    },
+    "codex": {
+      "command": "codex",
+      "flags": "--yolo exec",
+      "rate_limit_patterns": ["rate_limit_exceeded", "insufficient_quota", "429"],
+      "refusal_patterns": ["content_policy_violation"],
+      "health_check": "--version",
+      "context_file": "AGENTS.md"
+    },
+    "copilot": {
+      "command": "copilot",
+      "flags": "--allow-all-tools -p",
+      "rate_limit_patterns": ["rate limit", "token usage exceeded"],
+      "refusal_patterns": [],
+      "health_check": "--version",
+      "context_file": null
+    },
+    "opencode": {
+      "command": "opencode",
+      "flags": "-p -f json -q",
+      "rate_limit_patterns": ["429", "Rate limit exceeded"],
+      "refusal_patterns": [],
+      "health_check": "--version",
+      "context_file": "opencode.json"
+    }
+  },
+  "aliases": {
+    "build": "Implement the next priority task from IMPLEMENTATION_PLAN.md",
+    "test": "Run all tests and fix any failures",
+    "review": "Review code changes and suggest improvements",
+    "plan": "Analyze the current state and create an implementation plan",
+    "fix": "Fix any failing tests or build errors"
+  }
+}
