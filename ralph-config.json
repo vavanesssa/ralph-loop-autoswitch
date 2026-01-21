@@ -8,7 +8,7 @@
   "cli_configs": {
     "claude": {
       "command": "claude",
-      "flags": "--dangerously-skip-permissions -p --output-format json",
+      "flags": "--dangerously-skip-permissions",
       "rate_limit_patterns": ["rate limit", "rate_limited", "429", "exhausted"],
       "refusal_patterns": ["Usage Policy", "refusal"],
       "health_check": "--version",
@@ -16,7 +16,7 @@
     },
     "gemini": {
       "command": "gemini",
-      "flags": "--yolo -p --output-format json",
+      "flags": "--yolo",
       "rate_limit_patterns": ["RESOURCE_EXHAUSTED", "rateLimitExceeded", "429"],
       "refusal_patterns": ["BLOCKED", "SAFETY"],
       "health_check": "--help",
@@ -24,7 +24,7 @@
     },
     "codex": {
       "command": "codex",
-      "flags": "--yolo exec",
+      "flags": "--ask-for-approval never",
       "rate_limit_patterns": ["rate_limit_exceeded", "insufficient_quota", "429"],
       "refusal_patterns": ["content_policy_violation"],
       "health_check": "--version",
@@ -32,7 +32,7 @@
     },
     "copilot": {
       "command": "copilot",
-      "flags": "--allow-all-tools -p",
+      "flags": "--allow-all-tools --allow-all-paths",
       "rate_limit_patterns": ["rate limit", "token usage exceeded"],
       "refusal_patterns": [],
       "health_check": "--version",
@@ -40,7 +40,7 @@
     },
     "opencode": {
       "command": "opencode",
-      "flags": "-p -f json -q",
+      "flags": "",
       "rate_limit_patterns": ["429", "Rate limit exceeded"],
       "refusal_patterns": [],
       "health_check": "--version",

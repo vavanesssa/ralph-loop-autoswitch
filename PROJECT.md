@@ -2,24 +2,22 @@
 
 ## Ce que je veux
 
-<!-- Décris ce que tu veux construire. Sois aussi vague ou précis que tu veux. -->
-<!-- L'IA va analyser ça, créer les specs, découper en tâches, et te demander validation. -->
-
-Exemple:
-Je veux une API REST pour gérer une todo list avec authentification.
-Les utilisateurs peuvent s'inscrire, se connecter, et gérer leurs tâches.
-Stack: Node.js, Express, PostgreSQL, JWT.
+Je veux un systéme de chat, avec authentification, avec recherche, pagination. horodatage, design clean.
+Dark/light Mode, ajouter des amis, faire des discussions en groupe ou privées.
 
 ---
 
 ## Contraintes (optionnel)
 
-- Budget temps:
-- Technologies imposées:
-- À éviter:
+- Technologies imposées: Next.js, Tailwind CSS, Supabase, TypeScript, ShadCN, Zod, Zustand.
+
 
 ---
 
 ## Notes additionnelles (optionnel)
 
-<!-- Tout ce qui peut aider l'IA à mieux comprendre -->
+Tu peux utiliser le MCP Supabase pour interroger la base de données. utilise (et vide / tu peux tout supprimer dessus) sur le projet MEDITRACK. Ne touche JAMAIS au projet OOB2.
+MCP Context7 pour les infos documentation up to date.
+le MCP chrome-devtools pour tester le site.
+Le projet s'apelle "event_app" et se trouve (ou doit etre creé) dans le dossier "./event_app"
+Il faudra a la fin tester les build et fix tout ça et s'assurer que tout est clean. et push vers vercel.

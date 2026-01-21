@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Require bash 4+ for associative arrays
+if [[ ${BASH_VERSINFO[0]} -lt 4 ]]; then
+    echo "Error: This script requires bash 4+. You have bash ${BASH_VERSION}"
+    echo "On macOS: brew install bash && add /opt/homebrew/bin/bash to /etc/shells"
+    echo "Then: chsh -s /opt/homebrew/bin/bash"
+    exit 1
+fi
+
+# Ensure Homebrew and common paths are available
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+
 #=============================================================================
 # RALPH LOOP MULTI-IA - Version Simplifiée
 #=============================================================================
@@ -187,10 +198,16 @@ execute_with_cli() {
     [[ "$cli" != "$LAST_CLI" ]] && [[ -n "$LAST_CLI" ]] && log "SWITCH" "━━━ $LAST_CLI → $cli ━━━"
     CURRENT_CLI="$cli"
 
+    log "INFO" "🚀 Lancement: $cli"
+    echo -e "${CYAN}─────────────────────────────────────────────${NC}"
+
     local tmp=$(mktemp)
     local exit_code=0
 
-    timeout "${TIMEOUT_SEC}s" bash -c "echo \"\$1\" | $full_cmd" -- "$prompt" > "$tmp" 2>&1 || exit_code=$?
+    # Exécute et affiche en temps réel avec tee
+    timeout "${TIMEOUT_SEC}s" bash -c "echo \"\$1\" | $full_cmd" -- "$prompt" 2>&1 | tee "$tmp" || exit_code=${PIPESTATUS[0]}
+
+    echo -e "${CYAN}─────────────────────────────────────────────${NC}"
 
     local output=$(cat "$tmp")
     rm -f "$tmp"
@@ -338,7 +355,7 @@ ralph_loop() {
     echo ""
 
     while [[ $iteration -lt $MAX_ITERATIONS ]]; do
-        ((iteration++))
+        ((iteration++)) || true
 
         local phase="BUILD"
         check_plan_approved || phase="PLAN"
